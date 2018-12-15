@@ -25,24 +25,28 @@ survivalCutoff <- function(data = data, colTime = colTime, colStatus = colStatus
 
 ############################################## Read in the TCGA expression data. ##############################################################
 load('/Share/home/JiFansen/JiFansen/TCGA-Project/Expdata/TCGA_pancancer.noNA.logqq.RData')
-purity_leukocyte <- read.table(file = '/fshare2/JiFansen/Immune_LandScape/Purity_Leukocyte.txt', header = T, sep = '\t')
-purity_leukocyte <- purity_leukocyte[,c(1,2,4,11,13)]
-purity_leukocyte$Sum <- purity_leukocyte$purity+purity_leukocyte$LeukocyteRatio
-purity_leukocyte <- purity_leukocyte[-which(purity_leukocyte$Sum>=1),]
-purity_leukocyte$other <- 1 - purity_leukocyte$Sum
+#purity_leukocyte <- read.table(file = '/fshare2/JiFansen/Immune_LandScape/Purity_Leukocyte.txt', header = T, sep = '\t')
+#purity_leukocyte <- purity_leukocyte[,c(1,2,4,11,13)]
+#purity_leukocyte$Sum <- purity_leukocyte$purity+purity_leukocyte$LeukocyteRatio
+#purity_leukocyte <- purity_leukocyte[-which(purity_leukocyte$Sum>=1),]
+#purity_leukocyte$other <- 1 - purity_leukocyte$Sum
+cancertype <- read.table(file = '/Share/home/JiFansen/JiFansen/TCGA-Project/Expdata/TCGA_pancancer.noNA.logqq.exp_lable.txt', header = F, sep = '\t')
+cancertype <- as.character(cancertype$V2)
 sampleName <- colnames(expression.table)
 sampleName <- gsub("\\.","-",sampleName)
 rawName <- sampleName
-sampleName <- substr(sampleName, 1, 15)
-match.result <- match(as.character(purity_leukocyte$array),sampleName)
-big.index <- which(is.na(match.result)==FALSE)
-small.index <- match.result[big.index]
-purity_leukocyte <- purity_leukocyte[big.index,]
-expression.table <- expression.table[,small.index]
-rawName <- rawName[small.index]
-cancertype <- as.character(purity_leukocyte$cancertype)
-cancername <- unique(cancertype)
 colnames(expression.table) <- rawName
+
+#sampleName <- substr(sampleName, 1, 15)
+#match.result <- match(as.character(purity_leukocyte$array),sampleName)
+#big.index <- which(is.na(match.result)==FALSE)
+#small.index <- match.result[big.index]
+#purity_leukocyte <- purity_leukocyte[big.index,]
+#expression.table <- expression.table[,small.index]
+#rawName <- rawName[small.index]
+#cancertype <- as.character(purity_leukocyte$cancertype)
+#cancername <- unique(cancertype)
+
 ##################################################################################################################################################
 # Read the candidate genes.
 candidate.genes <- read.csv(file = '/Share/home/JiFansen/pathways/fin_TBCP_RFselection.csv', header = T)
@@ -61,7 +65,7 @@ for(cluster_number in c(2,3)){
     all.non.immune.clinical$sample_barcode <- gsub('\\.', '-', all.non.immune.clinical$sample_barcode)
     match.result <- match(all.non.immune.clinical$sample_barcode, names(Groups))
     all.non.immune.clinical$group <- Groups[match.result]
-    all.non.immune.clinical <- all.non.immune.clinical[-which(is.na(all.non.immune.clinical$group)), ]
+    #all.non.immune.clinical <- all.non.immune.clinical[-which(is.na(all.non.immune.clinical$group)), ]
     surv_object <- Surv(time = all.non.immune.clinical$times, event = all.non.immune.clinical$vital_status)
     fit1 <- survdiff(surv_object ~ group, data = all.non.immune.clinical)
     p.fit1 <- 1-pchisq(fit1$chisq, length(fit1$n)-1)
@@ -74,7 +78,7 @@ for(cluster_number in c(2,3)){
   }
 }
 ################################################### Clustering Analysis. #########################################################################
-for(cluster_number in c(2, 3)){
+for(cluster_number in c(2,3)){
   for(top.genes in c(40)){
     SampleRecord <- list()
     candidate.genes.top20 <- candidate.genes[1:top.genes]
@@ -102,15 +106,21 @@ for(cluster_number in c(2, 3)){
     match.result <- match(clinical$bcr_patient_barcode, common.clinical)
     big.index <- which(is.na(match.result)==FALSE)
     clinical <- clinical[big.index,]
+    tmp.match <- match(clinical$bcr_patient_barcode, substr(colnames(expression.table),1,12))
+    clinical$groups <- Groups[tmp.match]
     tumor.type <- as.data.frame(table(as.character(clinical$cancer)))
     tumor.type.number <- as.numeric(tumor.type[,2])
     tumor.type.name <- as.character(tumor.type[,1])
     all.non.immune.clinical <- read.csv(file = '/fshare2/JiFansen/Clinical/ALLnon-immuneSurvivalthree_year_data_matchexp.csv', header = T, sep = ',')
     all.non.immune.clinical <- all.non.immune.clinical[,-c(2,3,4,5,6,7,9)]
-    common.clinical <- intersect(as.character(all.non.immune.clinical$X),substr(as.character(purity_leukocyte$sample),1,12))
+    
+    common.clinical <- intersect(as.character(all.non.immune.clinical$X),substr(colnames(expression.table),1,12))
     match.result <- match(all.non.immune.clinical$X, common.clinical)
     big.index <- which(is.na(match.result)==FALSE)
     all.non.immune.clinical <- all.non.immune.clinical[big.index,]
+    tmp.match <- match(all.non.immune.clinical$X, substr(as.character(purity_leukocyte$sample),1,12))
+    all.non.immune.clinical$groups <- Groups[tmp.match]
+    
     group = rep('No-clinical',ncol(expression.table))
     match.result <- match(substr(colnames(expression.table),1,12), as.character(clinical$bcr_patient_barcode))
     immuno.big.index <- which(is.na(match.result)==FALSE)
@@ -118,24 +128,43 @@ for(cluster_number in c(2, 3)){
     group[immuno.big.index] <- 'Clinical'
     survival.time <- rep(0,ncol(expression.table))
     survival.time[immuno.big.index] <- clinical$times[immuno.small.index]
-    stat <- as.data.frame(table(colnames(expression.table)))
-    stat <- stat[stat$Freq>1,]
-    titleName <- substr(colnames(expression.table),1,12)
-    for(i in 1:dim(stat)[1]){
-      titleName[which(titleName==as.character(stat[i,1]))[2]] <- paste(as.character(stat[i,1]),'-1', sep='')
-    }
+    #stat <- as.data.frame(table(colnames(expression.table)))
+    #stat <- stat[stat$Freq>1,]
+    #titleName <- substr(colnames(expression.table),1,12)
+    #for(i in 1:dim(stat)[1]){
+    #  titleName[which(titleName==as.character(stat[i,1]))[2]] <- paste(as.character(stat[i,1]),'-1', sep='')
+    #}
     immune.pvalue <- c()
     nonimmune.pvalue <- c()
     for(s in 1:1000){
-      non.immune.clinical <- 0
-      for(w in 1:length(tumor.type.name)){
-        cancer.index <- which(all.non.immune.clinical$cancer_type==tumor.type.name[w])
-        if(w==1){
-          non.immune.clinical <- all.non.immune.clinical[cancer.index[sample(1:length(cancer.index),tumor.type.number[w])],]
-        }else{
-          non.immune.clinical <- rbind.data.frame(non.immune.clinical,all.non.immune.clinical[cancer.index[sample(1:length(cancer.index),tumor.type.number[w])],])
-        }
+#      non.immune.clinical <- 0
+#      for(w in 1:length(tumor.type.name)){
+#        cancer.index <- which(all.non.immune.clinical$cancer_type==tumor.type.name[w])
+#        if(w==1){
+#          non.immune.clinical <- all.non.immune.clinical[cancer.index[sample(1:length(cancer.index),tumor.type.number[w])],]
+#        }else{
+#          non.immune.clinical <- rbind.data.frame(non.immune.clinical,all.non.immune.clinical[cancer.index[sample(1:length(cancer.index),tumor.type.number[w])],])
+#        }
+#      }
+      if(cluster_number==2){
+        immu.one.number <- length(which(clinical$groups==1))
+        immu.two.number <- length(which(clinical$groups==2))
+        nonimmu.one.number <- length(which(all.non.immune.clinical$groups==1))
+        nonimmu.two.number <- length(which(all.non.immune.clinical$groups==2))
+        non.immune.clinical <- rbind.data.frame(all.non.immune.clinical[which(all.non.immune.clinical$groups==1)[sample(1:nonimmu.one.number, immu.one.number)],], 
+                                                all.non.immune.clinical[which(all.non.immune.clinical$groups==2)[sample(1:nonimmu.two.number, immu.two.number)],])
+      }else{
+        immu.one.number <- length(which(clinical$groups==1))
+        immu.two.number <- length(which(clinical$groups==2))
+        immu.three.number <- length(which(clinical$groups==3))
+        nonimmu.one.number <- length(which(all.non.immune.clinical$groups==1))
+        nonimmu.two.number <- length(which(all.non.immune.clinical$groups==2))
+        nonimmu.three.number <- length(which(all.non.immune.clinical$groups==3))
+        non.immune.clinical <- rbind.data.frame(all.non.immune.clinical[which(all.non.immune.clinical$groups==1)[sample(1:nonimmu.one.number, immu.one.number)],], 
+                                                all.non.immune.clinical[which(all.non.immune.clinical$groups==2)[sample(1:nonimmu.two.number, immu.two.number)],],
+                                                all.non.immune.clinical[which(all.non.immune.clinical$groups==3)[sample(1:nonimmu.three.number, immu.three.number)],])
       }
+      
       common.clinical <- intersect(as.character(non.immune.clinical$X),substr(as.character(purity_leukocyte$sample),1,12))
       match.result <- match(non.immune.clinical$X, common.clinical)
       non.immuno.big.index <- which(is.na(match.result)==FALSE)
@@ -175,6 +204,7 @@ for(cluster_number in c(2, 3)){
       nonimmune.pvalue <- c(nonimmune.pvalue, p.fit2)
     }
     a <- length(which(nonimmune.pvalue<unique(immune.pvalue)))
+    print(a)
     # Plot the median non-immunotherapy p value survival plots.
     SampleRecord <- SampleRecord[[which(nonimmune.pvalue==sort(nonimmune.pvalue)[500])]]
     surv_object.new <- Surv(time = SampleRecord$OtherSurvival, event = SampleRecord$status)
